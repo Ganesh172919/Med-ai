@@ -2,7 +2,11 @@ import { Suspense, lazy } from 'react';
 import { BrowserRouter as Router, Navigate, Route, Routes } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { ThemeProvider } from './context/ThemeContext';
+import { I18nProvider } from './i18n';
 import ProtectedRoute from './components/ProtectedRoute';
+import ErrorBoundary from './components/ErrorBoundary';
+import SkipToContent from './components/SkipToContent';
+import ThemeSettingsSync from './components/ThemeSettingsSync';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const SoloChat = lazy(() => import('./pages/SoloChat'));
@@ -37,30 +41,43 @@ function AppShellLoader() {
   );
 }
 
+/**
+ * Wraps a page element in an ErrorBoundary so a single page crash
+ * doesn't take down the entire application. Each route gets its own
+ * boundary — if Dashboard crashes, SoloChat still works.
+ */
+function RouteBoundary({ children }: { children: React.ReactNode }) {
+  return <ErrorBoundary>{children}</ErrorBoundary>;
+}
+
 export default function App() {
   return (
-    <ThemeProvider>
-      <Router>
-        <Toaster
-          position="top-right"
-          toastOptions={{
-            style: {
-              background: '#1A1D2E',
-              color: '#e2e8f0',
-              border: '1px solid #2E3354',
-              borderRadius: '12px',
-            },
-            success: {
-              iconTheme: { primary: '#A855F7', secondary: '#1A1D2E' },
-            },
-            error: {
-              iconTheme: { primary: '#ef4444', secondary: '#1A1D2E' },
-            },
-          }}
-        />
+    <ErrorBoundary>
+      <I18nProvider>
+      <ThemeProvider>
+        <Router>
+          <ThemeSettingsSync />
+          <SkipToContent />
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                background: '#1A1D2E',
+                color: '#e2e8f0',
+                border: '1px solid #2E3354',
+                borderRadius: '12px',
+              },
+              success: {
+                iconTheme: { primary: '#A855F7', secondary: '#1A1D2E' },
+              },
+              error: {
+                iconTheme: { primary: '#ef4444', secondary: '#1A1D2E' },
+              },
+            }}
+          />
 
-        <Suspense fallback={<AppShellLoader />}>
-          <Routes>
+          <Suspense fallback={<AppShellLoader />}>
+            <Routes>
             {/* Public routes */}
             <Route path="/landing" element={<Landing />} />
             <Route path="/login" element={<Login />} />
@@ -69,23 +86,25 @@ export default function App() {
             <Route path="/reset-password" element={<ResetPassword />} />
             <Route path="/auth/google/callback" element={<GoogleCallback />} />
 
-            {/* Protected routes */}
+            {/* Protected routes — each wrapped in RouteBoundary for fault isolation */}
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-            <Route path="/chat" element={<ProtectedRoute><SoloChat /></ProtectedRoute>} />
-            <Route path="/rooms" element={<ProtectedRoute><Rooms /></ProtectedRoute>} />
-            <Route path="/group/:roomId" element={<ProtectedRoute><GroupChat /></ProtectedRoute>} />
-            <Route path="/projects" element={<ProtectedRoute><Projects /></ProtectedRoute>} />
-            <Route path="/memory" element={<ProtectedRoute><MemoryCenter /></ProtectedRoute>} />
-            <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
-            <Route path="/search" element={<ProtectedRoute><SearchPage /></ProtectedRoute>} />
-            <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
-            <Route path="/export" element={<ProtectedRoute><ExportChat /></ProtectedRoute>} />
-            <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
+            <Route path="/dashboard" element={<ProtectedRoute><RouteBoundary><Dashboard /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/chat" element={<ProtectedRoute><RouteBoundary><SoloChat /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/rooms" element={<ProtectedRoute><RouteBoundary><Rooms /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/group/:roomId" element={<ProtectedRoute><RouteBoundary><GroupChat /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/projects" element={<ProtectedRoute><RouteBoundary><Projects /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/memory" element={<ProtectedRoute><RouteBoundary><MemoryCenter /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/profile" element={<ProtectedRoute><RouteBoundary><Profile /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/search" element={<ProtectedRoute><RouteBoundary><SearchPage /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/settings" element={<ProtectedRoute><RouteBoundary><Settings /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/export" element={<ProtectedRoute><RouteBoundary><ExportChat /></RouteBoundary></ProtectedRoute>} />
+            <Route path="/admin" element={<ProtectedRoute requireAdmin><RouteBoundary><AdminDashboard /></RouteBoundary></ProtectedRoute>} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </Suspense>
       </Router>
     </ThemeProvider>
+      </I18nProvider>
+    </ErrorBoundary>
   );
 }

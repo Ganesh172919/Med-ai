@@ -104,7 +104,7 @@ export default function MemberManagement({ roomId, currentUserId, isCreator, onC
               <p className="text-[10px] text-gray-500">{members.length} members</p>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all">
+          <button onClick={onClose} aria-label="Close members panel" className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all">
             <X size={16} />
           </button>
         </div>
@@ -129,7 +129,7 @@ export default function MemberManagement({ roomId, currentUserId, isCreator, onC
                   {/* Avatar */}
                   <div className="relative flex-shrink-0">
                     {member.avatar ? (
-                      <img src={member.avatar} alt="" className="w-9 h-9 rounded-full object-cover" />
+                      <img src={member.avatar} alt={`${member.displayName}'s avatar`} className="w-9 h-9 rounded-full object-cover" />
                     ) : (
                       <div className="w-9 h-9 rounded-full bg-gradient-to-br from-neon-purple to-neon-blue flex items-center justify-center text-white text-sm font-bold">
                         {member.username[0]?.toUpperCase()}
@@ -169,6 +169,9 @@ export default function MemberManagement({ roomId, currentUserId, isCreator, onC
                         onClick={() => setActiveDropdown(
                           activeDropdown === member.userId ? null : member.userId
                         )}
+                        aria-label={`Change role for ${member.displayName}`}
+                        aria-expanded={activeDropdown === member.userId}
+                        aria-haspopup="true"
                         className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all"
                       >
                         <ChevronDown size={14} />

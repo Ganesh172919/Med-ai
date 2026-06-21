@@ -94,4 +94,13 @@ memoryEntrySchema.index({ userId: 1, fingerprint: 1 }, { unique: true });
 memoryEntrySchema.index({ userId: 1, updatedAt: -1 });
 memoryEntrySchema.index({ userId: 1, pinned: 1, updatedAt: -1 });
 
+// Text index for full-text search across summary, details, and tags.
+// WHY: Enables efficient server-side search using MongoDB's $text operator
+// instead of loading all entries and filtering client-side (O(n) in JS).
+// The weights prioritize summary matches (3x) over details (2x) over tags (1x).
+memoryEntrySchema.index(
+  { summary: 'text', details: 'text', tags: 'text' },
+  { weights: { summary: 3, details: 2, tags: 1 }, name: 'memory_text_search' }
+);
+
 module.exports = mongoose.model('MemoryEntry', memoryEntrySchema);

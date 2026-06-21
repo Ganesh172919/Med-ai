@@ -1,0 +1,8 @@
+# robots.txt for ChatSphere
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /admin
+Disallow: /auth/google/callback
+
+Sitemap: https://chatsphere.app/sitemap.xml

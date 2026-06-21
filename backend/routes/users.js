@@ -15,8 +15,8 @@ router.put('/profile', authMiddleware, async (req, res) => {
     }
 
     if (displayName !== undefined) {
-      if (displayName.length > 50) {
-        return res.status(400).json({ error: 'Display name must be under 50 characters' });
+      if (typeof displayName !== 'string' || displayName.length > 50) {
+        return res.status(400).json({ error: 'Display name must be a string under 50 characters' });
       }
       user.displayName = displayName.trim();
     }

@@ -6,36 +6,89 @@ const { getConversationInsight, refreshConversationInsight } = require('../servi
 const router = express.Router();
 
 // GET /api/conversations - List user's conversations
+// OPTIMIZED: Uses MongoDB aggregation pipeline to compute messageCount and
+// lastMessage at the database level, avoiding loading the entire messages array
+// into Node.js memory. For conversations with hundreds of messages, this
+// reduces memory usage from O(messages) to O(conversations) and shifts
+// computation to the database engine which is optimized for this work.
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const filters = { userId: req.user.id };
+    const matchStage = { userId: req.user.id };
     if (req.query.projectId) {
-      filters.projectId = req.query.projectId === 'none' ? null : req.query.projectId;
+      matchStage.projectId = req.query.projectId === 'none' ? null : req.query.projectId;
     }
 
-    const conversations = await Conversation.find(filters)
-      .select('title messages createdAt updatedAt sourceType sourceLabel projectId projectName')
-      .populate('projectId', 'name description')
-      .sort({ updatedAt: -1 })
-      .limit(50)
-      .lean();
+    // Aggregation pipeline: match → sort → limit → project computed fields → lookup project
+    const conversations = await Conversation.aggregate([
+      { $match: matchStage },
+      { $sort: { updatedAt: -1 } },
+      { $limit: 50 },
+      {
+        $project: {
+          title: 1,
+          createdAt: 1,
+          updatedAt: 1,
+          sourceType: 1,
+          sourceLabel: 1,
+          projectId: 1,
+          projectName: 1,
+          // Compute message count without loading the array into JS
+          messageCount: { $size: { $ifNull: ['$messages', []] } },
+          // Extract only the last message's content (first 100 chars)
+          // $arrayElemAt with -1 gets the last element efficiently
+          lastMessage: {
+            $let: {
+              vars: { msgs: { $ifNull: ['$messages', []] } },
+              in: {
+                $cond: {
+                  if: { $gt: [{ $size: '$$msgs' }, 0] },
+                  then: {
+                    $substrCP: [
+                      { $arrayElemAt: ['$$msgs.content', -1] },
+                      0,
+                      100,
+                    ],
+                  },
+                  else: '',
+                },
+              },
+            },
+          },
+        },
+      },
+    ]);
+
+    // Batch-fetch project names to avoid N+1 queries
+    const projectIds = [...new Set(
+      conversations
+        .map((c) => c.projectId)
+        .filter(Boolean)
+        .map((id) => id.toString())
+    )];
+
+    let projectMap = {};
+    if (projectIds.length > 0) {
+      const Project = require('../models/Project');
+      const projects = await Project.find({ _id: { $in: projectIds } })
+        .select('name description')
+        .lean();
+      projectMap = Object.fromEntries(
+        projects.map((p) => [p._id.toString(), { id: p._id.toString(), name: p.name, description: p.description || '' }])
+      );
+    }
 
     res.json(conversations.map((conversation) => ({
       id: conversation._id.toString(),
       title: conversation.title,
-      project: conversation.projectId ? {
-        id: conversation.projectId._id.toString(),
-        name: conversation.projectId.name,
-        description: conversation.projectId.description || '',
-      } : conversation.projectName ? {
-        id: '',
-        name: conversation.projectName,
-        description: '',
-      } : null,
+      project: conversation.projectId
+        ? projectMap[conversation.projectId.toString()] || null
+        : conversation.projectName
+          ? { id: '', name: conversation.projectName, description: '' }
+          : null,
       sourceType: conversation.sourceType || 'native',
       sourceLabel: conversation.sourceLabel || 'ChatSphere',
-      messageCount: conversation.messages.length,
-      lastMessage: conversation.messages.length > 0 ? conversation.messages[conversation.messages.length - 1].content.slice(0, 100) : '',
+      messageCount: conversation.messageCount,
+      lastMessage: conversation.lastMessage || '',
       createdAt: conversation.createdAt,
       updatedAt: conversation.updatedAt,
     })));

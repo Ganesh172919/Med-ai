@@ -73,7 +73,8 @@ router.get('/rooms/:roomId', authMiddleware, async (req, res) => {
       totalMessages: messages.length,
     };
 
-    const filename = `chatsphere-room-${room.name.replace(/\s+/g, '-').toLowerCase()}.json`;
+    const sanitized = room.name.replace(/[^a-zA-Z0-9-_]/g, '-').replace(/-+/g, '-').toLowerCase();
+    const filename = `chatsphere-room-${sanitized}.json`;
     res.setHeader('Content-Disposition', `attachment; filename=${filename}`);
     res.setHeader('Content-Type', 'application/json');
     res.json(exportData);

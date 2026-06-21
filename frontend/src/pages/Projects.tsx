@@ -7,13 +7,12 @@ import MessageBubble from '../components/MessageBubble';
 import SmartReplies from '../components/SmartReplies';
 import GrammarSuggestion from '../components/GrammarSuggestion';
 import ConversationInsightsPanel from '../components/ConversationInsightsPanel';
-import { fetchAvailableModels, type AIModel } from '../api/ai';
 import { runConversationAction } from '../api/conversations';
 import { createProject, deleteProject, fetchProjects, updateProject, type ProjectFile, type ProjectSummary } from '../api/projects';
 import { uploadFile } from '../api/rooms';
 import { useChat } from '../hooks/useChat';
+import { useModelSelector } from '../hooks/useModelSelector';
 import { useChatStore } from '../store/chatStore';
-import { getModelGroups } from '../utils/aiModels';
 import { formatDate } from '../utils/format';
 import toast from 'react-hot-toast';
 
@@ -27,7 +26,6 @@ type ProjectForm = {
 };
 
 const emptyProject = (): ProjectForm => ({ name: '', description: '', instructions: '', context: '', prompts: '', files: [] });
-const PROJECT_MODEL_STORAGE_KEY = 'chatsphere.project.model';
 const mapProject = (project?: ProjectSummary | null): ProjectForm => project ? {
   name: project.name,
   description: project.description,
@@ -165,10 +163,6 @@ function ProjectChatView({ project, projects, onBack, onProjectChange }: {
 }) {
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState('');
-  const [loadingModels, setLoadingModels] = useState(true);
-  const [emptyModelMessage, setEmptyModelMessage] = useState('');
   const [insightLoading, setInsightLoading] = useState(false);
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const [projectSaving, setProjectSaving] = useState(false);
@@ -177,8 +171,13 @@ function ProjectChatView({ project, projects, onBack, onProjectChange }: {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const activeModel = availableModels.find((m) => m.id === selectedModelId) || availableModels[0] || null;
-  const groupedModels = useMemo(() => getModelGroups(availableModels), [availableModels]);
+
+  // Shared model selector hook
+  const {
+    availableModels, selectedModelId, setSelectedModelId,
+    activeModel, groupedModels, loadingModels, emptyModelMessage,
+  } = useModelSelector('chatsphere.project');
+
   const { sendMessage, isLoading, removeConversation, startNewChat } = useChat(project);
   const { activeConversationId, conversations, updateConversationInsight } = useChatStore();
   const activeConversation = conversations.find((c) => c.id === activeConversationId);
@@ -186,32 +185,6 @@ function ProjectChatView({ project, projects, onBack, onProjectChange }: {
   const completedMessages = useMemo(() => activeMessages.filter((m) => m.messageState !== 'pending'), [activeMessages]);
   const smartReplyMessages = useMemo(() => completedMessages.map((m) => ({ role: m.role, content: m.content })), [completedMessages]);
   const smartRepliesEnabled = Boolean(activeConversation && smartReplyMessages.length > 0 && smartReplyMessages[smartReplyMessages.length - 1]?.role === 'assistant' && !isLoading);
-
-  useEffect(() => {
-    const loadModels = async () => {
-      setLoadingModels(true);
-      try {
-        const result = await fetchAvailableModels();
-        const visibleModels = result.models.filter((m) => m.id !== 'auto');
-        setAvailableModels(visibleModels);
-        setEmptyModelMessage(result.emptyStateMessage || '');
-        const stored = localStorage.getItem(PROJECT_MODEL_STORAGE_KEY);
-        const preferred = result.defaultModelId && result.defaultModelId !== 'auto' ? result.defaultModelId : visibleModels[0]?.id || '';
-        setSelectedModelId(visibleModels.some((m) => m.id === stored) ? String(stored) : preferred);
-      } catch {
-        setAvailableModels([]);
-        setSelectedModelId('');
-        setEmptyModelMessage('No AI models configured.');
-      } finally {
-        setLoadingModels(false);
-      }
-    };
-    void loadModels();
-  }, []);
-
-  useEffect(() => {
-    if (selectedModelId) localStorage.setItem(PROJECT_MODEL_STORAGE_KEY, selectedModelId);
-  }, [selectedModelId]);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [activeMessages.length, isLoading]);
   useEffect(() => {

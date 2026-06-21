@@ -14,6 +14,7 @@ export default memo(function ReadReceipt({ status, className = '' }: Props) {
       animate={{ opacity: 1, scale: 1 }}
       className={`inline-flex items-center ${className}`}
       title={status === 'read' ? 'Read' : status === 'delivered' ? 'Delivered' : 'Sent'}
+      aria-label={status === 'read' ? 'Message read' : status === 'delivered' ? 'Message delivered' : 'Message sent'}
     >
       {status === 'sent' && (
         <Check size={12} className="text-gray-600" />

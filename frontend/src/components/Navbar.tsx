@@ -4,6 +4,7 @@ import {
   LayoutDashboard, Search,
   FolderKanban, Brain, Activity, Stethoscope, Settings,
 } from 'lucide-react';
+import LanguageSwitcher from './LanguageSwitcher';
 
 export default function Navbar() {
   const location = useLocation();
@@ -66,14 +67,17 @@ export default function Navbar() {
             })}
           </div>
 
-          {/* Right side — Settings */}
-          <Link
-            to="/settings"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium hover:text-white hover:bg-navy-800/60 transition-colors"
-          >
-            <Settings size={14} />
-            <span className="hidden sm:inline">Settings</span>
-          </Link>
+          {/* Right side — Language + Settings */}
+          <div className="flex items-center gap-1">
+            <LanguageSwitcher />
+            <Link
+              to="/settings"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-gray-400 text-sm font-medium hover:text-white hover:bg-navy-800/60 transition-colors"
+            >
+              <Settings size={14} />
+              <span className="hidden sm:inline">Settings</span>
+            </Link>
+          </div>
 
         </div>
       </div>

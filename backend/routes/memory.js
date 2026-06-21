@@ -6,9 +6,13 @@ const { previewImport, importConversationBundle, exportUserBundle } = require('.
 const router = express.Router();
 
 // GET /api/memory
+// Uses MongoDB $text index for server-side search when a query is provided,
+// falling back to client-side filtering for non-text filters (pinned).
+// This replaces the previous approach of loading ALL entries into JS and
+// filtering with String.includes() — O(n) per request vs O(log n) with index.
 router.get('/', authMiddleware, async (req, res) => {
   try {
-    const search = String(req.query.q || '').trim().toLowerCase();
+    const search = String(req.query.q || '').trim();
     const pinned = req.query.pinned === 'true';
     const limit = Math.min(100, parseInt(req.query.limit, 10) || 50);
     const filter = { userId: req.user.id };
@@ -17,21 +21,25 @@ router.get('/', authMiddleware, async (req, res) => {
       filter.pinned = true;
     }
 
-    const rows = await MemoryEntry.find(filter)
-      .sort({ pinned: -1, updatedAt: -1 })
-      .limit(limit)
-      .lean();
+    let rows;
 
-    const result = rows.filter((row) => {
-      if (!search) {
-        return true;
-      }
+    if (search) {
+      // Use MongoDB text index for efficient full-text search.
+      // $meta: 'textScore' provides relevance scoring for sorting.
+      // The text index covers summary (3x weight), details (2x), and tags (1x).
+      filter.$text = { $search: search };
+      rows = await MemoryEntry.find(filter, { score: { $meta: 'textScore' } })
+        .sort({ score: { $meta: 'textScore' }, pinned: -1 })
+        .limit(limit)
+        .lean();
+    } else {
+      rows = await MemoryEntry.find(filter)
+        .sort({ pinned: -1, updatedAt: -1 })
+        .limit(limit)
+        .lean();
+    }
 
-      const haystack = [row.summary, row.details, ...(row.tags || [])].join(' ').toLowerCase();
-      return haystack.includes(search);
-    });
-
-    res.json(result.map((row) => ({
+    res.json(rows.map((row) => ({
       id: row._id.toString(),
       summary: row.summary,
       details: row.details,

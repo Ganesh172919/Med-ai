@@ -91,7 +91,7 @@ export function CreatePollModal({ roomId, onCreated, onClose }: CreatePollProps)
             </div>
             <h2 className="font-display font-semibold text-white">Create Poll</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all">
+          <button onClick={onClose} aria-label="Close create poll dialog" className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all">
             <X size={16} />
           </button>
         </div>
@@ -128,7 +128,7 @@ export function CreatePollModal({ roomId, onCreated, onClose }: CreatePollProps)
                     maxLength={200}
                   />
                   {options.length > 2 && (
-                    <button onClick={() => removeOption(i)} className="p-1 text-gray-600 hover:text-red-400 transition-colors flex-shrink-0">
+                    <button onClick={() => removeOption(i)} aria-label={`Remove option ${i + 1}`} className="p-1 text-gray-600 hover:text-red-400 transition-colors flex-shrink-0">
                       <X size={14} />
                     </button>
                   )}

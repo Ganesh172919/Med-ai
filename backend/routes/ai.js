@@ -57,7 +57,9 @@ router.get('/models', authMiddleware, async (req, res) => {
       emptyStateMessage: models.length > 0 ? '' : 'No AI models are configured. Add provider API keys in backend/.env.',
     });
   } catch (err) {
-    console.error('List AI models error:', err);
+    logger.error('LIST_AI_MODELS_FAILED', 'Failed to list AI models', {
+      error: logger.serializeError(err),
+    });
     res.status(500).json({ error: 'Failed to load AI models' });
   }
 });

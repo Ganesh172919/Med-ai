@@ -51,6 +51,7 @@ export default function Sidebar({ isOpen, onToggle, onNewChat, onDeleteConversat
             </button>
             <button
               onClick={onToggle}
+              aria-label="Close sidebar"
               className="p-2 rounded-lg text-gray-400 hover:text-white hover:bg-navy-700 transition-all lg:hidden"
             >
               <ChevronLeft size={16} />

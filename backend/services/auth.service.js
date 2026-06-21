@@ -72,8 +72,10 @@ async function registerUser({ username, email, password }) {
     return { status: 400, error: 'Username must be 3-30 characters' };
   }
 
-  if (password.length < 6) {
-    return { status: 400, error: 'Password must be at least 6 characters' };
+  // OWASP recommends minimum 8 characters for passwords.
+  // The validation middleware also enforces this at the route level.
+  if (password.length < 8) {
+    return { status: 400, error: 'Password must be at least 8 characters' };
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;

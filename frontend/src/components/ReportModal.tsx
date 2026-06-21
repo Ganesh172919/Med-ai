@@ -80,7 +80,7 @@ export default function ReportModal({ targetId, targetType, targetName, roomId, 
               )}
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all">
+          <button onClick={onClose} aria-label="Close report dialog" className="p-1.5 rounded-lg text-gray-500 hover:text-white hover:bg-navy-700 transition-all">
             <X size={16} />
           </button>
         </div>

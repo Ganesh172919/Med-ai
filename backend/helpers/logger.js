@@ -180,6 +180,7 @@ function child(baseContext = {}) {
 }
 
 module.exports = {
+  buildBodySummary,
   buildRequestSummary,
   child,
   createRequestId,

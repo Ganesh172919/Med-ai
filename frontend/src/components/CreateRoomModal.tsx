@@ -73,6 +73,7 @@ export default function CreateRoomModal({ isOpen, onClose, onCreate }: Props) {
                 </div>
                 <button
                   onClick={onClose}
+                  aria-label="Close create room dialog"
                   className="p-2 rounded-lg hover:bg-navy-700 text-gray-400 hover:text-white transition-all"
                 >
                   <X size={18} />

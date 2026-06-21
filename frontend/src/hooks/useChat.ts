@@ -1,3 +1,43 @@
+/**
+ * =============================================================================
+ * useChat Hook
+ * =============================================================================
+ *
+ * PURPOSE:
+ * Encapsulates all solo AI chat logic: sending messages, managing conversations,
+ * loading history, and handling AI responses. This hook is the primary interface
+ * between the UI (SoloChat page) and the chat system.
+ *
+ * WHY A CUSTOM HOOK:
+ * - Separates business logic from UI rendering
+ * - Reusable across different chat interfaces
+ * - Manages complex async flows (send → pending → response/error)
+ * - Coordinates between Zustand store and API calls
+ *
+ * PATTERN: Command Pattern
+ * The hook exposes commands (sendMessage, removeConversation, startNewChat)
+ * that the UI calls. The hook handles all the complexity internally.
+ *
+ * DATA FLOW:
+ * 1. User types message → calls sendMessage()
+ * 2. Hook creates local user message + pending assistant message
+ * 3. Hook calls API with conversation history
+ * 4. On success: updates assistant message with AI response
+ * 5. On error: updates assistant message with error state
+ *
+ * STATE MANAGEMENT:
+ * - Local state: isLoading (for UI spinner)
+ * - Global state: conversations, messages (via Zustand)
+ * - Server state: synced on mount and after operations
+ *
+ * LEARNING NOTES:
+ * - useCallback prevents unnecessary re-renders of child components
+ * - The hook handles conversation creation (first message creates conversation)
+ * - Optimistic updates: user message appears immediately before API confirms
+ * - Error recovery: failed messages show error state, not removed
+ * =============================================================================
+ */
+
 import { useCallback, useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { sendChatMessage, type ChatAttachment } from '../api/chat';
@@ -11,10 +51,27 @@ import type { ProjectSummary } from '../api/projects';
 import { useChatStore } from '../store/chatStore';
 import type { Message } from '../store/chatStore';
 
+/**
+ * Map API role string to local role type.
+ *
+ * WHY THIS EXISTS:
+ * The API uses 'model' for AI responses, but the frontend uses 'assistant'.
+ * This normalizes the role for consistent handling.
+ */
 function mapRole(role: string): 'user' | 'assistant' {
   return role === 'assistant' ? 'assistant' : 'user';
 }
 
+/**
+ * Generate a deterministic message ID from message properties.
+ *
+ * WHY DETERMINISTIC:
+ * Prevents duplicate messages when syncing. Same message content
+ * always produces the same ID, so re-importing doesn't create duplicates.
+ *
+ * PATTERN: Composite key
+ * Combines role + timestamp + content prefix for uniqueness.
+ */
 function buildMessageId(role: string, timestamp: string, content: string) {
   return `${role}:${timestamp}:${content.slice(0, 24)}`;
 }
@@ -118,6 +175,28 @@ export function useChat(activeProject?: ProjectSummary | null) {
     };
   }, [conversations, getActiveConversation, setConversationMessages, updateConversationInsight]);
 
+  /**
+   * Send a message to the AI and handle the response.
+   *
+   * FLOW:
+   * 1. Get or create active conversation
+   * 2. Add user message to store (optimistic update)
+   * 3. Add pending assistant message (shows loading state)
+   * 4. Call API with conversation history
+   * 5. Update assistant message with response or error
+   *
+   * OPTIMISTIC UPDATES:
+   * User message appears immediately. Assistant message shows "Thinking..."
+   * while waiting for API response. This makes the UI feel responsive.
+   *
+   * ERROR HANDLING:
+   * - API errors: Show toast notification, update message with error state
+   * - Network errors: Same handling (catch block)
+   * - Message stays in conversation (not removed) for retry context
+   *
+   * @param content - The user's message text
+   * @param options - Optional: modelId, attachment, project context
+   */
   const sendMessage = useCallback(
     async (
       content: string,

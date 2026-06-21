@@ -1,5 +1,37 @@
-const { ALLOWED_TYPES, MAX_FILE_SIZE } = require('../middleware/upload');
+/**
+ * =============================================================================
+ * Message Formatting Service
+ * =============================================================================
+ *
+ * PURPOSE:
+ * Provides message DTO formatting and attachment validation for the HTTP API
+ * routes and socket handlers.
+ *
+ * MIGRATION NOTE (Iteration 3):
+ * The `formatMessage` function was previously duplicated in both this file and
+ * `socket/formatMessage.js` with minor differences (deleted message placeholder).
+ * It is now imported from the canonical `socket/formatMessage.js` to eliminate
+ * duplication. All existing import paths continue to work.
+ *
+ * This file retains:
+ * - `formatMemoryRefs` — formats memory reference entries for API responses
+ * - `validateAttachmentPayload` — validates file attachment data (HTTP-specific)
+ * - Re-export of `formatMessage` for backward compatibility
+ * =============================================================================
+ */
 
+const { ALLOWED_TYPES, MAX_FILE_SIZE } = require('../middleware/upload');
+const { formatMessage } = require('../socket/formatMessage');
+
+/**
+ * Format memory reference entries for API responses.
+ *
+ * WHY: Memory references in messages contain ObjectId and scoring data
+ * that needs to be serialized to safe client-facing types.
+ *
+ * @param {Array} memoryRefs - Raw memory reference entries
+ * @returns {Array} Formatted memory references
+ */
 function formatMemoryRefs(memoryRefs = []) {
   return memoryRefs.map((entry) => ({
     id: String(entry.id),
@@ -8,32 +40,18 @@ function formatMemoryRefs(memoryRefs = []) {
   }));
 }
 
-function formatMessage(message) {
-  return {
-    id: message._id.toString(),
-    userId: message.userId,
-    username: message.username,
-    content: message.isDeleted ? 'This message was deleted' : message.content,
-    timestamp: message.createdAt,
-    isAI: message.isAI || false,
-    triggeredBy: message.triggeredBy || null,
-    replyTo: message.replyTo && message.replyTo.id ? message.replyTo : null,
-    reactions: message.reactions ? (message.reactions instanceof Map ? Object.fromEntries(message.reactions) : message.reactions) : {},
-    status: message.status || 'sent',
-    isPinned: message.isPinned || false,
-    isEdited: message.isEdited || false,
-    editedAt: message.editedAt || null,
-    isDeleted: message.isDeleted || false,
-    fileUrl: message.fileUrl || null,
-    fileName: message.fileName || null,
-    fileType: message.fileType || null,
-    fileSize: message.fileSize || null,
-    memoryRefs: formatMemoryRefs(message.memoryRefs || []),
-    modelId: message.modelId || null,
-    provider: message.provider || null,
-  };
-}
-
+/**
+ * Validate file attachment payload for upload.
+ *
+ * WHY: Ensures all required file fields are present and within limits
+ * before the message is persisted. This prevents orphaned file references.
+ *
+ * SECURITY: Validates URL prefix to prevent arbitrary file paths.
+ * Validates MIME type against allowlist to prevent malicious uploads.
+ *
+ * @param {Object} attachment - File attachment data
+ * @returns {string|null} Error message or null if valid
+ */
 function validateAttachmentPayload({ fileUrl, fileName, fileType, fileSize }) {
   const hasAnyFileField = fileUrl || fileName || fileType || fileSize;
   if (!hasAnyFileField) {

@@ -19,122 +19,39 @@ import MessageBubble from '../components/MessageBubble';
 import SmartReplies from '../components/SmartReplies';
 import GrammarSuggestion from '../components/GrammarSuggestion';
 import ConversationInsightsPanel from '../components/ConversationInsightsPanel';
-import { fetchAvailableModels, type AIModel } from '../api/ai';
+import ProviderModelSelector from '../components/ProviderModelSelector';
+import VirtualizedMessageList from '../components/VirtualizedMessageList';
+import { ChatAnnouncer } from '../components/LiveRegion';
 import { runConversationAction } from '../api/conversations';
 import { uploadFile } from '../api/rooms';
 import { useChat } from '../hooks/useChat';
+import { useModelSelector } from '../hooks/useModelSelector';
 import { useChatStore } from '../store/chatStore';
-import { getModelGroups, type AIModelGroup } from '../utils/aiModels';
 import { formatDate } from '../utils/format';
 
-const SOLO_MODEL_STORAGE_KEY = 'chatsphere.solo.model';
 const SOLO_PROVIDER_STORAGE_KEY = 'chatsphere.solo.provider';
 const DEFAULT_COMPOSER_HEIGHT = 170;
-
-interface ProviderModelSelectorProps {
-  selectedProvider: string;
-  selectedModelId: string;
-  groupedModels: AIModelGroup[];
-  loadingModels: boolean;
-  emptyModelMessage: string;
-  onProviderChange: (provider: string) => void;
-  onModelChange: (modelId: string) => void;
-  compact?: boolean;
-}
-
-function ProviderModelSelector({
-  selectedProvider,
-  selectedModelId,
-  groupedModels,
-  loadingModels,
-  emptyModelMessage,
-  onProviderChange,
-  onModelChange,
-  compact = false,
-}: ProviderModelSelectorProps) {
-  const disabled = loadingModels || groupedModels.length === 0;
-  const activeGroup = groupedModels.find((g) => g.provider === selectedProvider);
-  const modelsForProvider = activeGroup?.models || [];
-
-  return (
-    <div className={compact ? 'flex flex-row gap-2' : 'flex flex-col gap-1.5'}>
-      {/* Provider selector */}
-      <div
-        className={`rounded-2xl border border-navy-700/70 bg-navy-800/80 ${
-          compact ? 'min-w-0 flex-1 px-2.5 py-1' : 'px-3.5 py-2.5'
-        }`}
-      >
-        <p className="mb-0.5 text-[9px] uppercase tracking-[0.22em] text-gray-500">API Provider</p>
-        <select
-          value={selectedProvider}
-          onChange={(e) => onProviderChange(e.target.value)}
-          disabled={disabled}
-          className={`w-full cursor-pointer bg-transparent text-white focus:outline-none ${
-            compact ? 'text-xs font-medium' : 'text-sm font-medium'
-          }`}
-          aria-label="API Provider"
-        >
-          {groupedModels.length === 0 ? (
-            <option value="">No providers available</option>
-          ) : (
-            groupedModels.map((group) => (
-              <option key={group.provider} value={group.provider} className="bg-navy-900 text-white">
-                {group.label}
-              </option>
-            ))
-          )}
-        </select>
-      </div>
-      {/* Model selector */}
-      <div
-        className={`rounded-2xl border border-navy-700/70 bg-navy-800/80 ${
-          compact ? 'min-w-0 flex-1 px-2.5 py-1' : 'px-3.5 py-2.5'
-        }`}
-      >
-        <p className="mb-0.5 text-[9px] uppercase tracking-[0.22em] text-gray-500">Model</p>
-        <select
-          value={selectedModelId}
-          onChange={(e) => onModelChange(e.target.value)}
-          disabled={disabled || modelsForProvider.length === 0}
-          className={`w-full cursor-pointer bg-transparent text-white focus:outline-none ${
-            compact ? 'text-xs font-medium' : 'text-sm font-medium'
-          }`}
-          aria-label="Model"
-        >
-          {modelsForProvider.length === 0 ? (
-            <option value="">{emptyModelMessage || 'No models for this provider'}</option>
-          ) : (
-            modelsForProvider.map((model) => (
-              <option key={model.id} value={model.id} className="bg-navy-900 text-white">
-                {model.label}
-              </option>
-            ))
-          )}
-        </select>
-      </div>
-    </div>
-  );
-}
 
 export default function SoloChat() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true);
   const [input, setInput] = useState('');
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState('');
   const [selectedProvider, setSelectedProvider] = useState('');
-  const [loadingModels, setLoadingModels] = useState(true);
-  const [emptyModelMessage, setEmptyModelMessage] = useState('');
   const [insightLoading, setInsightLoading] = useState(false);
   const [composerHeight, setComposerHeight] = useState(DEFAULT_COMPOSER_HEIGHT);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
-  const activeModel = availableModels.find((model) => model.id === selectedModelId) || availableModels[0] || null;
-  const groupedModels = useMemo(() => getModelGroups(availableModels), [availableModels]);
-  // Auth removed — ChatSphere runs without login gates
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Shared model selector hook — handles fetch, localStorage persistence, and derived state
+  const {
+    availableModels, selectedModelId, setSelectedModelId,
+    activeModel, groupedModels, loadingModels, emptyModelMessage,
+  } = useModelSelector('chatsphere.solo');
+
   const { sendMessage, isLoading, removeConversation, startNewChat } = useChat();
   const { activeConversationId, conversations, updateConversationInsight } = useChatStore();
   const activeConversation = conversations.find((conversation) => conversation.id === activeConversationId);
@@ -154,48 +71,18 @@ export default function SoloChat() {
       !isLoading
   );
 
+  // Restore provider selection from localStorage when models load
   useEffect(() => {
-    const loadModels = async () => {
-      setLoadingModels(true);
-      try {
-        const result = await fetchAvailableModels();
-        const visibleModels = result.models.filter((model) => model.id !== 'auto');
-        setAvailableModels(visibleModels);
-        setEmptyModelMessage(result.emptyStateMessage || '');
-        const storedModel = localStorage.getItem(SOLO_MODEL_STORAGE_KEY);
-        const storedProvider = localStorage.getItem(SOLO_PROVIDER_STORAGE_KEY);
-        const groups = getModelGroups(visibleModels);
+    if (groupedModels.length === 0) return;
+    const storedProvider = localStorage.getItem(SOLO_PROVIDER_STORAGE_KEY);
+    const validProvider = groupedModels.find((g) => g.provider === storedProvider);
+    setSelectedProvider(validProvider ? validProvider.provider : groupedModels[0]?.provider || '');
+  }, [groupedModels]);
 
-        // Restore provider
-        const validProvider = groups.find((g) => g.provider === storedProvider);
-        const defaultProvider = groups[0]?.provider || '';
-        const activeProvider = validProvider ? validProvider.provider : defaultProvider;
-        setSelectedProvider(activeProvider);
-
-        // Restore model within the active provider
-        const providerModels = groups.find((g) => g.provider === activeProvider)?.models || [];
-        const storedModelValid = providerModels.some((m) => m.id === storedModel);
-        const preferred =
-          result.defaultModelId && result.defaultModelId !== 'auto'
-            ? result.defaultModelId
-            : providerModels[0]?.id || '';
-        setSelectedModelId(storedModelValid ? String(storedModel) : preferred);
-      } catch (error) {
-        console.error('Failed to load AI models', error);
-        setAvailableModels([]);
-        setSelectedModelId('');
-        setSelectedProvider('');
-        setEmptyModelMessage('No AI models are configured. Add provider API keys in backend/.env.');
-      } finally {
-        setLoadingModels(false);
-      }
-    };
-    void loadModels();
-  }, []);
-
+  // Persist provider selection to localStorage
   useEffect(() => {
-    if (selectedModelId) localStorage.setItem(SOLO_MODEL_STORAGE_KEY, selectedModelId);
-  }, [selectedModelId]);
+    if (selectedProvider) localStorage.setItem(SOLO_PROVIDER_STORAGE_KEY, selectedProvider);
+  }, [selectedProvider]);
 
   useEffect(() => {
     if (selectedProvider) localStorage.setItem(SOLO_PROVIDER_STORAGE_KEY, selectedProvider);
@@ -290,6 +177,9 @@ export default function SoloChat() {
 
   return (
     <div className="h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,rgba(168,85,247,0.18),transparent_32%),radial-gradient(circle_at_top_right,rgba(59,130,246,0.16),transparent_30%),#0d0f1a] text-white">
+      {/* Accessibility: Announce new AI messages to screen readers */}
+      <ChatAnnouncer newMessage={completedMessages.length > 0 ? completedMessages[completedMessages.length - 1] : null} />
+
       <Navbar />
       <div className="flex h-full pt-16">
         {sidebarOpen ? (
@@ -424,6 +314,7 @@ export default function SoloChat() {
             </header>
 
             <div
+              ref={scrollContainerRef}
               className="min-h-0 flex-1 overflow-y-auto px-4 py-5 lg:px-6"
               style={{ paddingBottom: composerHeight + 28 }}
             >
@@ -451,32 +342,38 @@ export default function SoloChat() {
                 </div>
               ) : (
                 <div className="mx-auto max-w-3xl space-y-1">
-                  {activeMessages.map((message, index) => (
-                    <MessageBubble
-                      key={message.id}
-                      id={message.id}
-                      role={message.role}
-                      content={message.content}
-                      timestamp={message.timestamp}
-                      index={index}
-                      memoryRefs={message.memoryRefs}
-                      fileUrl={message.fileUrl}
-                      fileName={message.fileName}
-                      fileType={message.fileType}
-                      fileSize={message.fileSize}
-                      messageState={message.messageState}
-                      modelId={message.modelId}
-                      provider={message.provider}
-                      requestedModelId={message.requestedModelId}
-                      processingMs={message.processingMs}
-                      promptTokens={message.promptTokens}
-                      completionTokens={message.completionTokens}
-                      totalTokens={message.totalTokens}
-                      autoMode={message.autoMode}
-                      autoComplexity={message.autoComplexity}
-                      fallbackUsed={message.fallbackUsed}
-                    />
-                  ))}
+                  <VirtualizedMessageList
+                    messages={activeMessages}
+                    getKey={(m) => m.id}
+                    scrollRef={scrollContainerRef}
+                    alwaysRender={20}
+                    overscan="600px"
+                    renderItem={(message, index) => (
+                      <MessageBubble
+                        id={message.id}
+                        role={message.role}
+                        content={message.content}
+                        timestamp={message.timestamp}
+                        index={index}
+                        memoryRefs={message.memoryRefs}
+                        fileUrl={message.fileUrl}
+                        fileName={message.fileName}
+                        fileType={message.fileType}
+                        fileSize={message.fileSize}
+                        messageState={message.messageState}
+                        modelId={message.modelId}
+                        provider={message.provider}
+                        requestedModelId={message.requestedModelId}
+                        processingMs={message.processingMs}
+                        promptTokens={message.promptTokens}
+                        completionTokens={message.completionTokens}
+                        totalTokens={message.totalTokens}
+                        autoMode={message.autoMode}
+                        autoComplexity={message.autoComplexity}
+                        fallbackUsed={message.fallbackUsed}
+                      />
+                    )}
+                  />
                   <div ref={messagesEndRef} />
                 </div>
               )}

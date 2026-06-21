@@ -3,16 +3,20 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 type ThemeMode = 'dark' | 'light' | 'system';
 type ResolvedTheme = 'dark' | 'light';
 type CustomTheme = 'default' | 'midnight' | 'aurora' | 'sunset' | 'ocean' | 'forest';
+type ContrastMode = 'normal' | 'high';
 
 interface ThemeContextType {
   theme: ResolvedTheme;
   themeMode: ThemeMode;
   customTheme: CustomTheme;
   accentColor: string;
+  contrastMode: ContrastMode;
   toggleTheme: () => void;
   setThemeMode: (mode: ThemeMode) => void;
   setCustomTheme: (theme: CustomTheme) => void;
   setAccentColor: (color: string) => void;
+  setContrastMode: (mode: ContrastMode) => void;
+  toggleHighContrast: () => void;
 }
 
 const ThemeContext = createContext<ThemeContextType>({
@@ -20,10 +24,13 @@ const ThemeContext = createContext<ThemeContextType>({
   themeMode: 'dark',
   customTheme: 'default',
   accentColor: '#A855F7',
+  contrastMode: 'normal',
   toggleTheme: () => {},
   setThemeMode: () => {},
   setCustomTheme: () => {},
   setAccentColor: () => {},
+  setContrastMode: () => {},
+  toggleHighContrast: () => {},
 });
 
 // CSS custom properties for each theme preset
@@ -80,6 +87,14 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     return localStorage.getItem('accentColor') || '#A855F7';
   });
 
+  // High contrast mode for accessibility (WCAG AAA compliance)
+  const [contrastMode, setContrastModeState] = useState<ContrastMode>(() => {
+    const stored = localStorage.getItem('contrastMode');
+    if (stored) return stored as ContrastMode;
+    // Respect user's OS preference for high contrast
+    return window.matchMedia('(prefers-contrast: more)').matches ? 'high' : 'normal';
+  });
+
   const resolvedTheme: ResolvedTheme = themeMode === 'system' ? getSystemTheme() : themeMode;
 
   // Apply theme classes + CSS variables
@@ -87,6 +102,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     const root = document.documentElement;
     root.classList.toggle('dark', resolvedTheme === 'dark');
     root.classList.toggle('light', resolvedTheme === 'light');
+
+    // Apply high contrast mode
+    root.classList.toggle('high-contrast', contrastMode === 'high');
 
     // Apply custom theme variables
     const preset = THEME_PRESETS[customTheme];
@@ -96,7 +114,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
     // Apply accent color
     root.style.setProperty('--accent-color', accentColor);
-  }, [resolvedTheme, customTheme, accentColor]);
+  }, [resolvedTheme, customTheme, accentColor, contrastMode]);
 
   // Listen for system theme changes
   useEffect(() => {
@@ -139,6 +157,19 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem('accentColor', color);
   }, []);
 
+  const setContrastMode = useCallback((mode: ContrastMode) => {
+    setContrastModeState(mode);
+    localStorage.setItem('contrastMode', mode);
+  }, []);
+
+  const toggleHighContrast = useCallback(() => {
+    setContrastModeState((prev) => {
+      const next = prev === 'normal' ? 'high' : 'normal';
+      localStorage.setItem('contrastMode', next);
+      return next;
+    });
+  }, []);
+
   return (
     <ThemeContext.Provider
       value={{
@@ -146,10 +177,13 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         themeMode,
         customTheme,
         accentColor,
+        contrastMode,
         toggleTheme,
         setThemeMode,
         setCustomTheme,
         setAccentColor,
+        setContrastMode,
+        toggleHighContrast,
       }}
     >
       {children}

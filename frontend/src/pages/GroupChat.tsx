@@ -4,28 +4,27 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Send, ArrowLeft, Copy, Crown, Globe, Hash, KeyRound, Lock, Pin, Shield, Paperclip, Loader2, UserRoundCheck, X } from 'lucide-react';
 import Navbar from '../components/Navbar';
 import MessageBubble from '../components/MessageBubble';
+import VirtualizedMessageList from '../components/VirtualizedMessageList';
 import TypingIndicator from '../components/TypingIndicator';
 import UserList from '../components/UserList';
 import PinnedMessages from '../components/PinnedMessages';
+import { ChatAnnouncer, TypingAnnouncer, ConnectionAnnouncer } from '../components/LiveRegion';
 
 import MemberManagement from '../components/MemberManagement';
-import { fetchAvailableModels, type AIModel } from '../api/ai';
 import { fetchMembers, type GroupMember } from '../api/groups';
 import { useSocket } from '../hooks/useSocket';
+import { useModelSelector } from '../hooks/useModelSelector';
 import { useRoomStore } from '../store/roomStore';
 import { useAuthStore } from '../store/authStore';
 import { fetchRoomAccess, fetchRoomById, fetchRoomPrivateKey, joinRoomById, uploadFile } from '../api/rooms';
 import type { GroupMessage, RoomAccess } from '../api/rooms';
 
-import { getModelGroups } from '../utils/aiModels';
 import toast from 'react-hot-toast';
 
 interface TypingUser {
   userId: string;
   username: string;
 }
-
-const GROUP_MODEL_STORAGE_KEY = 'chatsphere.group.model';
 
 export default function GroupChat() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -52,23 +51,24 @@ export default function GroupChat() {
   const [isJoiningRoom, setIsJoiningRoom] = useState(false);
   const [creatorPrivateKey, setCreatorPrivateKey] = useState(initialPrivateKey || '');
   const [privateKeyLoading, setPrivateKeyLoading] = useState(false);
-  const [availableModels, setAvailableModels] = useState<AIModel[]>([]);
-  const [selectedModelId, setSelectedModelId] = useState('');
-  const [loadingModels, setLoadingModels] = useState(true);
-  const [emptyModelMessage, setEmptyModelMessage] = useState('');
   const [roomConnectionError, setRoomConnectionError] = useState('');
   const [members, setMembers] = useState<GroupMember[]>([]);
   const [membersLoading, setMembersLoading] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Shared model selector hook — includes 'auto' model for group chat
+  const {
+    availableModels, selectedModelId, setSelectedModelId,
+    activeModel, groupedModels, loadingModels, emptyModelMessage,
+  } = useModelSelector('chatsphere.group', { includeAuto: true });
 
   const canModerateMessages = currentRoom?.currentUserRole === 'creator'
     || currentRoom?.currentUserRole === 'admin'
     || currentRoom?.currentUserRole === 'moderator';
   const canManageMembers = currentRoom?.currentUserRole === 'creator' || currentRoom?.currentUserRole === 'admin';
-  const activeModel = availableModels.find((model) => model.id === selectedModelId) || availableModels[0] || null;
-  const groupedModels = getModelGroups(availableModels);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -119,38 +119,6 @@ export default function GroupChat() {
     });
     void loadCreatorPrivateKey(room.visibility, room.currentUserRole);
   }, [roomId, setCurrentRoom, loadCreatorPrivateKey]);
-
-  useEffect(() => {
-    const loadModels = async () => {
-      setLoadingModels(true);
-      try {
-        const result = await fetchAvailableModels();
-        setAvailableModels(result.models);
-        setEmptyModelMessage(result.emptyStateMessage || '');
-        const stored = localStorage.getItem(GROUP_MODEL_STORAGE_KEY);
-        const autoModelId = result.models.find((model) => model.id === 'auto')?.id || '';
-        const nextModelId = result.models.some((model) => model.id === stored)
-          ? String(stored)
-          : result.defaultModelId || autoModelId || result.models[0]?.id || '';
-        setSelectedModelId(nextModelId);
-      } catch (error) {
-        console.error('Failed to load group AI models', error);
-        setAvailableModels([]);
-        setSelectedModelId('');
-        setEmptyModelMessage('No AI models are configured. Add provider API keys in backend/.env.');
-      } finally {
-        setLoadingModels(false);
-      }
-    };
-
-    void loadModels();
-  }, []);
-
-  useEffect(() => {
-    if (selectedModelId) {
-      localStorage.setItem(GROUP_MODEL_STORAGE_KEY, selectedModelId);
-    }
-  }, [selectedModelId]);
 
   useEffect(() => {
     if (!roomId) return;
@@ -637,6 +605,11 @@ export default function GroupChat() {
 
   return (
     <div className="h-screen flex flex-col bg-navy-900 overflow-hidden">
+      {/* Accessibility: ARIA live regions for screen reader announcements */}
+      <ChatAnnouncer newMessage={currentRoom?.messages?.length ? currentRoom.messages[currentRoom.messages.length - 1] : null} />
+      <TypingAnnouncer users={typingUsers.map(u => u.username)} />
+      <ConnectionAnnouncer status={socket?.connected ? 'connected' : 'disconnected'} />
+
       <Navbar />
 
       <div className="flex h-[calc(100vh-4rem)] mt-16 overflow-hidden">
@@ -847,7 +820,7 @@ export default function GroupChat() {
           )}
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-2 py-4 min-h-0" role="log" aria-live="polite">
+          <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-2 py-4 min-h-0" role="log" aria-live="polite">
             <div className="max-w-3xl mx-auto space-y-1">
 
               {currentRoom.messages.length === 0 && (
@@ -857,47 +830,53 @@ export default function GroupChat() {
                   <p className="text-gray-600 text-sm mt-1">Start the conversation — type @ai to summon the reasoning engine</p>
                 </div>
               )}
-              {currentRoom.messages.map((msg, i) => (
-                <MessageBubble
-                  key={msg.id}
-                  id={msg.id}
-                  role={msg.isAI ? 'ai' : 'group-user'}
-                  content={msg.content}
-                  timestamp={msg.timestamp}
-                  username={msg.username}
-                  userId={msg.userId}
-                  currentUserId={user?.id}
-                  isAI={msg.isAI}
-                  triggeredBy={msg.triggeredBy}
-                  reactions={msg.reactions}
-                  replyTo={msg.replyTo}
-                  showReactions
-                  status={(msg as GroupMessage & { status?: 'sent' | 'delivered' | 'read' }).status}
-                  isPinned={(msg as GroupMessage & { isPinned?: boolean }).isPinned}
-                  isEdited={msg.isEdited}
-                  fileUrl={msg.fileUrl}
-                  fileName={msg.fileName}
-                  fileType={msg.fileType}
-                  fileSize={msg.fileSize}
-                  onReply={() => setReplyTo({ id: msg.id, username: msg.username, content: msg.content })}
-                  onReaction={(emoji) => {
-                    if (!roomId) return;
-                    void addReaction(roomId, msg.id, emoji).then((result) => {
-                      if (!result.success) {
-                        toast.error(String(result.error || 'Failed to update reaction'));
-                      }
-                    });
-                  }}
-                  onPin={handlePinToggle}
-                  onEdit={(nextContent) => void handleEditMessage(msg.id, nextContent)}
-                  onDelete={() => void handleDeleteMessage(msg.id)}
-                  canEdit={msg.userId === user?.id && !msg.isDeleted}
-                  canDelete={(msg.userId === user?.id || canModerateMessages) && !msg.isDeleted}
-                  index={i}
-                  modelId={msg.modelId}
-                  provider={msg.provider}
-                />
-              ))}
+              <VirtualizedMessageList
+                messages={currentRoom.messages}
+                getKey={(m) => m.id}
+                scrollRef={scrollContainerRef}
+                alwaysRender={25}
+                overscan="600px"
+                renderItem={(msg, i) => (
+                  <MessageBubble
+                    id={msg.id}
+                    role={msg.isAI ? 'ai' : 'group-user'}
+                    content={msg.content}
+                    timestamp={msg.timestamp}
+                    username={msg.username}
+                    userId={msg.userId}
+                    currentUserId={user?.id}
+                    isAI={msg.isAI}
+                    triggeredBy={msg.triggeredBy}
+                    reactions={msg.reactions}
+                    replyTo={msg.replyTo}
+                    showReactions
+                    status={(msg as GroupMessage & { status?: 'sent' | 'delivered' | 'read' }).status}
+                    isPinned={(msg as GroupMessage & { isPinned?: boolean }).isPinned}
+                    isEdited={msg.isEdited}
+                    fileUrl={msg.fileUrl}
+                    fileName={msg.fileName}
+                    fileType={msg.fileType}
+                    fileSize={msg.fileSize}
+                    onReply={() => setReplyTo({ id: msg.id, username: msg.username, content: msg.content })}
+                    onReaction={(emoji) => {
+                      if (!roomId) return;
+                      void addReaction(roomId, msg.id, emoji).then((result) => {
+                        if (!result.success) {
+                          toast.error(String(result.error || 'Failed to update reaction'));
+                        }
+                      });
+                    }}
+                    onPin={handlePinToggle}
+                    onEdit={(nextContent) => void handleEditMessage(msg.id, nextContent)}
+                    onDelete={() => void handleDeleteMessage(msg.id)}
+                    canEdit={msg.userId === user?.id && !msg.isDeleted}
+                    canDelete={(msg.userId === user?.id || canModerateMessages) && !msg.isDeleted}
+                    index={i}
+                    modelId={msg.modelId}
+                    provider={msg.provider}
+                  />
+                )}
+              />
               <AnimatePresence>
                 {aiThinking && <TypingIndicator />}
               </AnimatePresence>
